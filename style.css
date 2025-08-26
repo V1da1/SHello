@@ -433,7 +433,7 @@ body {
   line-height: 1.2;
   white-space: pre;
   text-shadow: 0 0 4px #66aaff, 0 0 8px #3388ff;
-  
+  justify-self: center;
 }
 
 .footer {
