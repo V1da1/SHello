@@ -44,8 +44,8 @@ function getSettings(){
       return;
     }
 
-    // Multiple or zero matches → search Google immediately
-    window.location.href = `https://www.google.com/search?q=${encodeURIComponent(raw)}`;
+    // Multiple or zero matches → search immediately
+    window.location.href = `https://duckduckgo.com/?q=${encodeURIComponent(raw)}`;
     ambiguityArmed = false;
     lastQueryForAmbiguity = '';
   });
