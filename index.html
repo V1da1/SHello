@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <title>></title>
+</head>
+<body>
+    <button id="open-settings" class="cog-btn global-cog" aria-label="Open settings">⚙</button>
+    <div class="container">
+        <div class="ascii">
+ ____    __  __          ___    ___             
+/\  _`\ /\ \/\ \        /\_ \  /\_ \            
+\ \,\L\_\ \ \_\ \     __\//\ \ \//\ \     ___   
+ \/_\__ \\ \  _  \  /'__`\\ \ \  \ \ \   / __`\ 
+   /\ \L\ \ \ \ \ \/\  __/ \_\ \_ \_\ \_/\ \L\ \
+   \ `\____\ \_\ \_\ \____\/\____\/\____\ \____/
+    \/_____/\/_/\/_/\/____/\/____/\/____/\/___/ 
+        </div>
+        <div class="footer">
+          <form id="search-form">
+            <div class="search-wrapper">
+              <input type="text" id="search-input" placeholder="search" autocomplete="off" autofocus />
+            </div>
+          </form>
+          <span id="clock"></span>
+        </div>
+    </div>
+    <div class="container-wide">
+      <div class="categories">
+        <div class="category">
+          <div class="category-header">
+            <img class="category-icon" src="frontend/media/news.png" alt="media" />
+            <span class="category-title">Media</span>
+          </div>
+          <ul class="category-links">
+            <li><a href="#"><img class="link-icon" src="frontend/media/genres/edm.jpg" alt="" /> EDM Hub</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/genres/jazz.jpg" alt="" /> Jazz Radio</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/genres/rock.jpg" alt="" /> Rock Daily</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/genres/hiphop.jpg" alt="" /> Hip-Hop Feed</a></li>
+          </ul>
+        </div>
+        <div class="category">
+          <div class="category-header">
+            <img class="category-icon" src="frontend/media/time.png" alt="dev" />
+            <span class="category-title">Dev</span>
+          </div>
+          <ul class="category-links">
+            <li><a href="#"><img class="link-icon" src="frontend/media/news.png" alt="" /> Docs</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/settings.png" alt="" /> Tools</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/user.png" alt="" /> Git</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/note.png" alt="" /> Notes</a></li>
+          </ul>
+        </div>
+        <div class="category">
+          <div class="category-header">
+            <img class="category-icon" src="frontend/media/menu.png" alt="social" />
+            <span class="category-title">Social</span>
+          </div>
+          <ul class="category-links">
+            <li><a href="#"><img class="link-icon" src="frontend/media/user.png" alt="" /> Twitter</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/user.png" alt="" /> Reddit</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/user.png" alt="" /> Discord</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/user.png" alt="" /> YouTube</a></li>
+          </ul>
+        </div>
+        <div class="category">
+          <div class="category-header">
+            <img class="category-icon" src="frontend/media/logo.png" alt="learn" />
+            <span class="category-title">Learn</span>
+          </div>
+          <ul class="category-links">
+            <li><a href="#"><img class="link-icon" src="frontend/media/news.png" alt="" /> Tutorials</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/news.png" alt="" /> Courses</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/news.png" alt="" /> Cheat Sheets</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/news.png" alt="" /> Sandboxes</a></li>
+          </ul>
+        </div>
+        <div class="category">
+          <div class="category-header">
+            <img class="category-icon" src="frontend/media/news.png" alt="misc" />
+            <span class="category-title">Misc</span>
+          </div>
+          <ul class="category-links">
+            <li><a href="#"><img class="link-icon" src="frontend/media/none.png" alt="" /> Link 1</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/none.png" alt="" /> Link 2</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/none.png" alt="" /> Link 3</a></li>
+            <li><a href="#"><img class="link-icon" src="frontend/media/none.png" alt="" /> Link 4</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    
+    <div class="container-last">
+      <div class="last-grid">
+        <section class="panel weather">
+          <div class="panel-header">
+            <span>Weather</span>
+            <span class="panel-sub" id="weather-location"></span>
+          </div>
+          <div class="panel-body" id="weather-body"></div>
+        </section>
+
+        <section class="panel todos">
+          <div class="panel-header">
+            <span>Todoist</span>
+            <span class="panel-sub" id="todoist-project"></span>
+          </div>
+          <ul class="panel-list" id="todoist-list"></ul>
+        </section>
+      </div>
+    </div>
+    <!-- Settings Overlay -->
+    <div id="settings-overlay" class="overlay hidden" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="modal-header">
+          <h2 id="settings-title">Settings</h2>
+          <button id="close-settings" class="close-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <form id="settings-form">
+            <fieldset>
+              <legend>Clock</legend>
+              <div class="choice-row">
+                <label><input type="radio" name="clock-format" id="clock-12" value="12"> 12-hour</label>
+                <label><input type="radio" name="clock-format" id="clock-24" value="24"> 24-hour</label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Todoist</legend>
+              <label>API Token <input type="password" id="todoist-token" placeholder="token" autocomplete="off"></label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Weather</legend>
+              <label>Latitude <input type="number" id="weather-lat" step="0.000001" placeholder="e.g. 40.712776"></label>
+              <label>Longitude <input type="number" id="weather-lon" step="0.000001" placeholder="e.g. -74.005974"></label>
+              <div class="choice-row">
+                <span class="choice-label">Temperature:</span>
+                <label><input type="radio" name="temp-units" id="temp-c" value="c"> Celsius (°C)</label>
+                <label><input type="radio" name="temp-units" id="temp-f" value="f"> Fahrenheit (°F)</label>
+              </div>
+              <div class="choice-row">
+                <span class="choice-label">Wind:</span>
+                <label><input type="radio" name="wind-units" id="wind-kmh" value="kmh"> km/h</label>
+                <label><input type="radio" name="wind-units" id="wind-mph" value="mph"> mph</label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Categories & Bookmarks</legend>
+              <div id="categories-editor" class="cats-editor"></div>
+              <div class="editor-actions">
+                <button type="button" id="add-category">+ Add Category</button>
+              </div>
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit" class="primary">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
