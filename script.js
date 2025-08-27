@@ -415,17 +415,35 @@ updateClock();
   }
 
   // Settings form
-  function populateForm() {
-    const s = getSettings();
-    const $ = (id) => document.getElementById(id);
-    (s.clock12h ? $('#clock-12') : $('#clock-24')).checked = true;
-    $('#todoist-token').value = s.todoist?.token || '';
-    $('#weather-lat').value = s.weather?.lat ?? '';
-    $('#weather-lon').value = s.weather?.lon ?? '';
-    (s.tempImperial ? $('#temp-f') : $('#temp-c')).checked = true;
-    (s.windImperial ? $('#wind-mph') : $('#wind-kmh')).checked = true;
-    renderCategoriesEditor(s.categories || []);
-  }
+  function populateForm(){
+  const s = getSettings();
+  const $ = (id) => document.getElementById(id);
+
+  (s.clock12h ? $('#clock-12') : $('#clock-24')).checked = true;
+  $('#todoist-token').value = s.todoist?.token || '';
+  $('#weather-lat').value = s.weather?.lat ?? '';
+  $('#weather-lon').value = s.weather?.lon ?? '';
+  (s.tempImperial ? $('#temp-f') : $('#temp-c')).checked = true;
+  (s.windImperial ? $('#wind-mph') : $('#wind-kmh')).checked = true;
+
+  // Read bookmarks directly from displayed categories
+  const categories = [];
+  document.querySelectorAll('.categories .category').forEach(catEl => {
+    const title = catEl.querySelector('.category-title')?.textContent.trim() || '';
+    const icon = catEl.querySelector('.category-icon')?.getAttribute('data-icon') || '';
+    const links = [];
+    catEl.querySelectorAll('.category-links li a').forEach(a => {
+      links.push({
+        title: a.textContent.trim(),
+        url: a.href,
+        icon: a.querySelector('img')?.src || ''
+      });
+    });
+    categories.push({ title, icon, links });
+  });
+
+  renderCategoriesEditor(categories);
+}
 
   function renderCategoriesEditor(categories) {
     if (!editor) return;
@@ -573,6 +591,7 @@ updateClock();
       `;
       const headerImg = card.querySelector('.category-icon');
       applyIcon(headerImg, cat.icon, 'frontend/media/news.png');
+      headerImg.setAttribute('data-icon', cat.icon);
       const ul = card.querySelector('.category-links');
       (cat.links || []).forEach((bm) => {
         const li = document.createElement('li');
