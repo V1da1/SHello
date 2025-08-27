@@ -39,7 +39,7 @@ body {
 .search-wrapper {
   position: relative;
   display: flex;
-  flex: 1
+  flex: 1;
 }
 
 .search-wrapper::before {
@@ -51,7 +51,7 @@ body {
   transform: translateY(-50%);
   color: #cfe6ff;
   font-family: monospace;
-  pointer-events: none;
+  pointer-events: none
 }
 
 /* removed trailing search icon */
@@ -63,7 +63,7 @@ body {
   padding-top: 5px;
   font-family: monospace;
   font-size: 12px;
-  width: 400px;
+  width: 400px
 }
 
 #search-input:focus {
@@ -92,7 +92,7 @@ body {
   border-radius: 8px;
   box-shadow: 0 0 12px rgba(102, 170, 255, .15), 0 12px 24px rgba(0, 0, 0, .5), 0 6px 6px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -6px 12px rgba(0, 0, 0, .25);
   overflow: hidden;
-  box-sizing: border-box;
+  box-sizing: border-box
 }
 
 /* horizontal categories scroller */
@@ -435,6 +435,7 @@ body {
   white-space: pre;
   text-shadow: 0 0 4px #66aaff, 0 0 8px #3388ff;
   margin-left: 60px;
+  /* keep as requested */
 }
 
 .footer {
@@ -443,10 +444,11 @@ body {
   color: #99ccff;
   text-shadow: 0 0 4px #99ccff;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 12px;
   border-top: 1px dotted #66aaff;
-  padding-top: 5px
+  padding-top: 5px;
+  justify-content: space-between;
 }
 
 /* Settings overlay */

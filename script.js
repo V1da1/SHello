@@ -1,10 +1,10 @@
 // --- Settings accessor
-function getSettings(){
+function getSettings() {
   try { return JSON.parse(localStorage.getItem('sp.settings') || '{}'); } catch { return {}; }
 }
 
 // --- Command-line search + autocomplete + calculator
-(function initCommandSearch(){
+(function initCommandSearch() {
   const form = document.getElementById('search-form');
   const input = document.getElementById('search-input');
   const searchWrap = document.querySelector('.search-wrapper');
@@ -34,16 +34,10 @@ function getSettings(){
       window.location.href = exactUrl;
       return;
     }
-    if (matches.length === 1) {
-      // Single match → navigate
-      window.location.href = matches[0].url;
-      return;
-    }
 
-    // Multiple or zero matches → search immediately
+    // Otherwise search (covers 0 matches OR 1+ prefix matches that aren't exact)
     window.location.href = `https://duckduckgo.com/?q=${encodeURIComponent(raw)}`;
-    ambiguityArmed = false;
-    lastQueryForAmbiguity = '';
+  });
 
   input.addEventListener('input', () => {
     const q = input.value;
@@ -56,10 +50,10 @@ function getSettings(){
     if (searchWrap) searchWrap.classList.toggle('searching', normalized.length > 0);
   });
 
-  function resetSearchUI(){
+  function resetSearchUI() {
     const scroller = document.querySelector('.categories');
     if (!scroller) return;
-    scroller.querySelectorAll('.category').forEach(cat => cat.classList.remove('is-hidden','has-matches'));
+    scroller.querySelectorAll('.category').forEach(cat => cat.classList.remove('is-hidden', 'has-matches'));
     scroller.querySelectorAll('.category-links a').forEach(a => {
       const title = a.getAttribute('data-title') || a.textContent || '';
       const iconEl = a.querySelector('img');
@@ -69,7 +63,7 @@ function getSettings(){
     });
   }
 
-  function renderSearchUI(query, matches){
+  function renderSearchUI(query, matches) {
     const scroller = document.querySelector('.categories');
     if (!scroller) return;
     resetSearchUI();
@@ -92,7 +86,7 @@ function getSettings(){
     });
   }
 
-  function computeBookmarkMatches(query){
+  function computeBookmarkMatches(query) {
     const out = [];
     let exactUrl = null;
     const scroller = document.querySelector('.categories');
@@ -114,50 +108,50 @@ function getSettings(){
     return { matches: out, exactUrl };
   }
 
-  function evaluateCalculator(input, last){
+  function evaluateCalculator(input, last) {
     if (last !== null && /^\s*[+\-*/]/.test(input)) input = String(last) + ' ' + input;
     if (!/^\s*[+\-]?\s*(?:\d+(?:\.\d+)?)(?:\s*[+\-*/]\s*\d+(?:\.\d+)?\s*)*$/.test(input)) {
-      return { didEvaluate:false };
+      return { didEvaluate: false };
     }
     try {
       const result = evaluateExpression(input);
-      if (!Number.isFinite(result)) return { didEvaluate:false };
-      return { didEvaluate:true, result };
-    } catch { return { didEvaluate:false }; }
+      if (!Number.isFinite(result)) return { didEvaluate: false };
+      return { didEvaluate: true, result };
+    } catch { return { didEvaluate: false }; }
   }
 
-  function evaluateExpression(expr){
+  function evaluateExpression(expr) {
     const tokens = []; const re = /\d+(?:\.\d+)?|[+\-*/]/g; let m;
-    while ((m = re.exec(expr))){ tokens.push(m[0]); }
+    while ((m = re.exec(expr))) { tokens.push(m[0]); }
     if (tokens.length === 0) throw new Error('no tokens');
-    const out = [], ops = [], prec = { '+':1,'-':1,'*':2,'/':2 }, isOp = t => ['+','-','*','/'].includes(t);
-    for (const t of tokens){ if (isOp(t)){ while (ops.length && prec[ops[ops.length-1]] >= prec[t]) out.push(ops.pop()); ops.push(t);} else out.push(parseFloat(t)); }
+    const out = [], ops = [], prec = { '+': 1, '-': 1, '*': 2, '/': 2 }, isOp = t => ['+', '-', '*', '/'].includes(t);
+    for (const t of tokens) { if (isOp(t)) { while (ops.length && prec[ops[ops.length - 1]] >= prec[t]) out.push(ops.pop()); ops.push(t); } else out.push(parseFloat(t)); }
     while (ops.length) out.push(ops.pop());
     const st = [];
-    for (const t of out){
+    for (const t of out) {
       if (typeof t === 'number') st.push(t);
-      else { const b = st.pop(), a = st.pop(); st.push(t==='+'?a+b:t==='-'?a-b:t==='*'?a*b:a/b); }
+      else { const b = st.pop(), a = st.pop(); st.push(t === '+' ? a + b : t === '-' ? a - b : t === '*' ? a * b : a / b); }
     }
     if (st.length !== 1) throw new Error('bad expr');
     return st[0];
   }
 
-  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 })();
 
 // --- Clock
-function updateClock(){
+function updateClock() {
   const now = new Date();
   const settings = getSettings();
-  const options = { hour:"2-digit",minute:"2-digit",second:"2-digit", hour12: settings.clock12h === true };
+  const options = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: settings.clock12h === true };
   document.getElementById("clock").textContent = now.toLocaleTimeString("en-US", options);
 }
 clearInterval(window.__clockInterval);
-window.__clockInterval = setInterval(updateClock,1000);
+window.__clockInterval = setInterval(updateClock, 1000);
 updateClock();
 
 // --- Discrete category navigation (wheel/keys/drag)
-(function enableDiscreteCategoryNav(){
+(function enableDiscreteCategoryNav() {
   const scroller = document.querySelector('.categories');
   if (!scroller) return;
 
@@ -232,37 +226,37 @@ updateClock();
 })();
 
 // --- Weather, Todoist, Settings
-(function initLastContainer(){
+(function initLastContainer() {
   const weatherBody = document.getElementById('weather-body');
-  const weatherLoc  = document.getElementById('weather-location');
-  const todoList    = document.getElementById('todoist-list');
-  const todoProj    = document.getElementById('todoist-project');
+  const weatherLoc = document.getElementById('weather-location');
+  const todoList = document.getElementById('todoist-list');
+  const todoProj = document.getElementById('todoist-project');
   const settingsBtn = document.getElementById('open-settings');
-  const overlay     = document.getElementById('settings-overlay');
-  const closeBtn    = document.getElementById('close-settings');
-  const form        = document.getElementById('settings-form');
-  const editor      = document.getElementById('categories-editor');
+  const overlay = document.getElementById('settings-overlay');
+  const closeBtn = document.getElementById('close-settings');
+  const form = document.getElementById('settings-form');
+  const editor = document.getElementById('categories-editor');
 
   if (settingsBtn) settingsBtn.addEventListener('click', openOverlay);
   if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
   if (overlay) overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(); });
 
-  function openOverlay(){
+  function openOverlay() {
     if (!overlay) return;
-    overlay.classList.remove('hidden'); overlay.classList.add('show'); overlay.setAttribute('aria-hidden','false');
+    overlay.classList.remove('hidden'); overlay.classList.add('show'); overlay.setAttribute('aria-hidden', 'false');
     populateForm();
   }
-  function closeOverlay(){
+  function closeOverlay() {
     if (!overlay) return;
     overlay.classList.remove('show'); overlay.classList.add('closing');
-    const onEnd = () => { overlay.classList.remove('closing'); overlay.classList.add('hidden'); overlay.setAttribute('aria-hidden','true'); overlay.removeEventListener('animationend', onEnd); };
+    const onEnd = () => { overlay.classList.remove('closing'); overlay.classList.add('hidden'); overlay.setAttribute('aria-hidden', 'true'); overlay.removeEventListener('animationend', onEnd); };
     overlay.addEventListener('animationend', onEnd);
   }
 
-  function saveSettings(next){ localStorage.setItem('sp.settings', JSON.stringify(next)); }
+  function saveSettings(next) { localStorage.setItem('sp.settings', JSON.stringify(next)); }
   window.getSettings = getSettings;
 
-  async function loadWeather(){
+  async function loadWeather() {
     if (!weatherBody) return;
     const s = getSettings();
     if (!s.weather || typeof s.weather.lat !== 'number' || typeof s.weather.lon !== 'number' || Number.isNaN(s.weather.lat) || Number.isNaN(s.weather.lon)) {
@@ -311,11 +305,11 @@ updateClock();
     } catch (e) { weatherBody.textContent = 'Weather unavailable'; }
   }
 
-  function weatherCodeToText(code){
-    const map = {0:'Clear',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Depositing rime fog',51:'Light drizzle',53:'Moderate drizzle',55:'Dense drizzle',56:'Freezing drizzle',57:'Dense freezing drizzle',61:'Slight rain',63:'Moderate rain',65:'Heavy rain',66:'Light freezing rain',67:'Heavy freezing rain',71:'Slight snow',73:'Moderate snow',75:'Heavy snow',77:'Snow grains',80:'Rain showers',81:'Heavy rain showers',82:'Violent rain showers',85:'Snow showers',86:'Heavy snow showers',95:'Thunderstorm',96:'Thunderstorm with hail',99:'Thunderstorm with heavy hail'};
+  function weatherCodeToText(code) {
+    const map = { 0: 'Clear', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast', 45: 'Fog', 48: 'Depositing rime fog', 51: 'Light drizzle', 53: 'Moderate drizzle', 55: 'Dense drizzle', 56: 'Freezing drizzle', 57: 'Dense freezing drizzle', 61: 'Slight rain', 63: 'Moderate rain', 65: 'Heavy rain', 66: 'Light freezing rain', 67: 'Heavy freezing rain', 71: 'Slight snow', 73: 'Moderate snow', 75: 'Heavy snow', 77: 'Snow grains', 80: 'Rain showers', 81: 'Heavy rain showers', 82: 'Violent rain showers', 85: 'Snow showers', 86: 'Heavy snow showers', 95: 'Thunderstorm', 96: 'Thunderstorm with hail', 99: 'Thunderstorm with heavy hail' };
     return map[code] || '';
   }
-  function chooseWeatherIconName(code, isNight){
+  function chooseWeatherIconName(code, isNight) {
     if (code === 0) return isNight ? 'moon' : 'sun';
     if (code === 1) return isNight ? 'moon-star' : 'sun';
     if (code === 2) return 'cloud-sun';
@@ -327,7 +321,7 @@ updateClock();
     return 'cloud';
   }
 
-  async function loadTodoist(){
+  async function loadTodoist() {
     if (!todoList) return;
     todoList.innerHTML = '';
     const s = getSettings();
@@ -349,7 +343,7 @@ updateClock();
         const d = new Date(t.due.date);
         return d.getTime();
       };
-      tasks.sort((a,b) => toTs(a) - toTs(b));
+      tasks.sort((a, b) => toTs(a) - toTs(b));
 
       const remaining = tasks.length;
       if (todoProj) todoProj.textContent = `${remaining} task${remaining === 1 ? '' : 's'}`;
@@ -365,7 +359,7 @@ updateClock();
           const ok = await markTodoistTaskDone(token, t.id);
           if (ok) {
             li.remove();
-            const newCount = Math.max(0, (parseInt((todoProj?.textContent || '0').replace(/[^0-9]/g,'') || '0', 10) - 1));
+            const newCount = Math.max(0, (parseInt((todoProj?.textContent || '0').replace(/[^0-9]/g, '') || '0', 10) - 1));
             if (todoProj) todoProj.textContent = `${newCount} task${newCount === 1 ? '' : 's'}`;
           } else {
             checkbox.checked = false;
@@ -394,7 +388,7 @@ updateClock();
     }
   }
 
-  function formatDueLabel(dueIso){
+  function formatDueLabel(dueIso) {
     if (!dueIso) return 'No date';
     try {
       const due = new Date(dueIso);
@@ -410,7 +404,7 @@ updateClock();
     } catch { return 'No date'; }
   }
 
-  async function markTodoistTaskDone(token, taskId){
+  async function markTodoistTaskDone(token, taskId) {
     try {
       const res = await fetch(`https://api.todoist.com/rest/v2/tasks/${encodeURIComponent(taskId)}/close`, {
         method: 'POST',
@@ -421,7 +415,7 @@ updateClock();
   }
 
   // Settings form
-  function populateForm(){
+  function populateForm() {
     const s = getSettings();
     const $ = (id) => document.getElementById(id);
     (s.clock12h ? $('#clock-12') : $('#clock-24')).checked = true;
@@ -433,22 +427,22 @@ updateClock();
     renderCategoriesEditor(s.categories || []);
   }
 
-  function renderCategoriesEditor(categories){
+  function renderCategoriesEditor(categories) {
     if (!editor) return;
     editor.innerHTML = '';
     categories.forEach((cat, idx) => editor.appendChild(makeCategoryRow(cat, idx)));
   }
 
-  function buildLucideUrl(name){ return `https://cdn.jsdelivr.net/npm/lucide-static/icons/${encodeURIComponent(name)}.svg`; }
-  function buildSimpleIconUrl(name){ return `https://cdn.simpleicons.org/${encodeURIComponent(name)}`; }
-  function applyIcon(imgEl, name, defaultUrl){
+  function buildLucideUrl(name) { return `https://cdn.jsdelivr.net/npm/lucide-static/icons/${encodeURIComponent(name)}.svg`; }
+  function buildSimpleIconUrl(name) { return `https://cdn.simpleicons.org/${encodeURIComponent(name)}`; }
+  function applyIcon(imgEl, name, defaultUrl) {
     const trimmed = (name || '').trim();
     if (!trimmed) { imgEl.src = defaultUrl; imgEl.onerror = null; return; }
     imgEl.onerror = () => { imgEl.onerror = null; imgEl.src = buildSimpleIconUrl(trimmed.toLowerCase()); };
     imgEl.src = buildLucideUrl(trimmed.toLowerCase());
   }
 
-  function makeCategoryRow(cat, idx){
+  function makeCategoryRow(cat, idx) {
     const row = document.createElement('div');
     row.className = 'cat-row';
     row.dataset.index = String(idx);
@@ -469,8 +463,8 @@ updateClock();
     const list = row.querySelector('.bookmarks');
     (cat.links || []).forEach((bm) => list.appendChild(makeBmRow(bm)));
     row.querySelector('.add-bm').addEventListener('click', () => {
-      if(list.children.length >= 4) return;
-      list.appendChild(makeBmRow({ title:'', url:'', icon:'' }));
+      if (list.children.length >= 4) return;
+      list.appendChild(makeBmRow({ title: '', url: '', icon: '' }));
     });
     row.querySelector('.del-cat').addEventListener('click', () => row.remove());
 
@@ -481,7 +475,7 @@ updateClock();
     return row;
   }
 
-  function makeBmRow(bm){
+  function makeBmRow(bm) {
     const r = document.createElement('div');
     r.className = 'bm-row';
     r.innerHTML = `
@@ -496,21 +490,15 @@ updateClock();
     const iconInput = r.querySelector('.bm-icon');
     const preview = r.querySelector('.bm-preview');
     applyIcon(preview, bm.icon, 'frontend/media/none.png');
-
-    preview.parentElement.addEventListener('click', e => {
-      e.stopPropagation();
-      const url = r.querySelector('.bm-url').value.trim();
-      if (url) window.open(url, '_blank');
-    });
     iconInput.addEventListener('input', () => { applyIcon(preview, iconInput.value.trim(), 'frontend/media/none.png'); });
     r.querySelector('.del-bm').addEventListener('click', () => r.remove());
     return r;
   }
 
-  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
   document.getElementById('add-category')?.addEventListener('click', () => {
-    editor.appendChild(makeCategoryRow({ title:'', icon:'', links:[] }, editor.children.length));
+    editor.appendChild(makeCategoryRow({ title: '', icon: '', links: [] }, editor.children.length));
   });
 
   if (form) form.addEventListener('submit', (e) => {
@@ -539,7 +527,7 @@ updateClock();
     renderCategoriesFromSettings();
   });
 
-  function collectCategoriesFromEditor(){
+  function collectCategoriesFromEditor() {
     const out = [];
     editor.querySelectorAll('.cat-row').forEach((row) => {
       const title = row.querySelector('.cat-title').value.trim();
@@ -559,7 +547,7 @@ updateClock();
   }
 
   // Render categories from settings; if none, seed defaults AND persist so settings show them next time
-  function renderCategoriesFromSettings(){
+  function renderCategoriesFromSettings() {
     const s = getSettings();
     let categories = Array.isArray(s.categories) ? s.categories : [];
     const scroller = document.querySelector('.categories');
@@ -591,8 +579,7 @@ updateClock();
         const a = document.createElement('a');
         a.href = bm.url || '#';
         const img = document.createElement('img');
-        img.className = 'link-icon';
-        img.alt = '';
+        img.className = 'link-icon'; img.alt = '';
         applyIcon(img, bm.icon, 'frontend/media/none.png');
         a.appendChild(img);
         a.appendChild(document.createTextNode(' ' + (bm.title ? bm.title : 'Link')));
@@ -603,32 +590,40 @@ updateClock();
     }
   }
 
-  function getDefaultCategories(){
+  function getDefaultCategories() {
     return [
-      { title: 'Search', icon: 'search', links: [
-        { title:'Google', url:'https://www.google.com', icon:'google' },
-        { title:'YouTube', url:'https://www.youtube.com', icon:'youtube' },
-        { title:'Wikipedia', url:'https://www.wikipedia.org', icon:'wikipedia' },
-        { title:'Maps', url:'https://maps.google.com', icon:'map' }
-      ]},
-      { title: 'Social', icon: 'users', links: [
-        { title:'Reddit', url:'https://www.reddit.com', icon:'reddit' },
-        { title:'X', url:'https://x.com', icon:'x-twitter' },
-        { title:'LinkedIn', url:'https://www.linkedin.com', icon:'linkedin' },
-        { title:'Instagram', url:'https://www.instagram.com', icon:'instagram' }
-      ]},
-      { title: 'Dev', icon: 'code', links: [
-        { title:'GitHub', url:'https://github.com', icon:'github' },
-        { title:'Stack Overflow', url:'https://stackoverflow.com', icon:'stack-overflow' },
-        { title:'MDN Docs', url:'https://developer.mozilla.org', icon:'mdnwebdocs' },
-        { title:'NPM', url:'https://www.npmjs.com', icon:'npm' }
-      ]},
-      { title: 'Shopping', icon: 'shopping-bag', links: [
-        { title:'Amazon', url:'https://www.amazon.com', icon:'amazon' },
-        { title:'eBay', url:'https://www.ebay.com', icon:'ebay' },
-        { title:'Newegg', url:'https://www.newegg.com', icon:'newegg' },
-        { title:'AliExpress', url:'https://www.aliexpress.com', icon:'aliexpress' }
-      ]}
+      {
+        title: 'Search', icon: 'search', links: [
+          { title: 'Google', url: 'https://www.google.com', icon: 'google' },
+          { title: 'YouTube', url: 'https://www.youtube.com', icon: 'youtube' },
+          { title: 'Wikipedia', url: 'https://www.wikipedia.org', icon: 'wikipedia' },
+          { title: 'Maps', url: 'https://maps.google.com', icon: 'map' }
+        ]
+      },
+      {
+        title: 'Social', icon: 'users', links: [
+          { title: 'Reddit', url: 'https://www.reddit.com', icon: 'reddit' },
+          { title: 'X', url: 'https://x.com', icon: 'x-twitter' },
+          { title: 'LinkedIn', url: 'https://www.linkedin.com', icon: 'linkedin' },
+          { title: 'Instagram', url: 'https://www.instagram.com', icon: 'instagram' }
+        ]
+      },
+      {
+        title: 'Dev', icon: 'code', links: [
+          { title: 'GitHub', url: 'https://github.com', icon: 'github' },
+          { title: 'Stack Overflow', url: 'https://stackoverflow.com', icon: 'stack-overflow' },
+          { title: 'MDN Docs', url: 'https://developer.mozilla.org', icon: 'mdnwebdocs' },
+          { title: 'NPM', url: 'https://www.npmjs.com', icon: 'npm' }
+        ]
+      },
+      {
+        title: 'Shopping', icon: 'shopping-bag', links: [
+          { title: 'Amazon', url: 'https://www.amazon.com', icon: 'amazon' },
+          { title: 'eBay', url: 'https://www.ebay.com', icon: 'ebay' },
+          { title: 'Newegg', url: 'https://www.newegg.com', icon: 'newegg' },
+          { title: 'AliExpress', url: 'https://www.aliexpress.com', icon: 'aliexpress' }
+        ]
+      }
     ];
   }
 
@@ -636,4 +631,6 @@ updateClock();
   loadWeather();
   loadTodoist();
   renderCategoriesFromSettings();
-})})
+})();
+
+/* Removed the old DOMContentLoaded autocomplete block to avoid conflicting behavior */
