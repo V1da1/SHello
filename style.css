@@ -63,11 +63,34 @@ body {
   padding-top: 5px;
   font-family: monospace;
   font-size: 12px;
-  width: 400px
+  width: 400px;
+  position: relative;
 }
 
 #search-input:focus {
   outline: none
+}
+
+/* inline completion overlay */
+.search-completion {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(207, 230, 255, 0.6);
+  pointer-events: none;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre;
+  text-shadow: 0 0 6px rgba(102, 170, 255, .25);
+}
+
+.search-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  font-family: monospace;
+  font-size: 12px;
 }
 
 #clock {

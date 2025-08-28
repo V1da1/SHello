@@ -8,9 +8,14 @@ function getSettings() {
   const form = document.getElementById('search-form');
   const input = document.getElementById('search-input');
   const searchWrap = document.querySelector('.search-wrapper');
+  const completionEl = document.getElementById('search-completion');
+  const measureEl = document.getElementById('search-measure');
   if (!form || !input) return;
 
   let lastCalcResult = null;
+  let suggestionTitles = [];
+  let suggestionUrls = [];
+  let suggestionIndex = 0;
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -26,16 +31,16 @@ function getSettings() {
       return;
     }
 
-    // Bookmarks
-    const { matches, exactUrl } = computeBookmarkMatches(raw);
-
-    // Only navigate on exact title match
-    if (exactUrl) {
-      window.location.href = exactUrl;
+    const q = raw.toLowerCase();
+    const all = getAllBookmarks();
+    const candidates = all.filter(b => b.title.toLowerCase().startsWith(q));
+    if (candidates.length > 0) {
+      const chosen = candidates[suggestionIndex % candidates.length];
+      window.location.href = chosen.url;
       return;
     }
-
-    // Otherwise search (covers 0 matches OR 1+ prefix matches that aren't exact)
+    const { exactUrl } = computeBookmarkMatches(raw);
+    if (exactUrl) { window.location.href = exactUrl; return; }
     window.location.href = `https://duckduckgo.com/?q=${encodeURIComponent(raw)}`;
   });
 
@@ -48,6 +53,39 @@ function getSettings() {
     const { matches } = computeBookmarkMatches(normalized);
     renderSearchUI(normalized, matches, { live: true });
     if (searchWrap) searchWrap.classList.toggle('searching', normalized.length > 0);
+    updateInlineSuggestions(normalized);
+    positionCompletion();
+  });
+
+  input.addEventListener('focus', positionCompletion);
+  window.addEventListener('resize', positionCompletion);
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') {
+      const q = input.value.trim().toLowerCase();
+      if (!q) return;
+      const all = getAllBookmarks();
+      const candidates = all.filter(b => b.title.toLowerCase().startsWith(q));
+      if (candidates.length > 1) {
+        e.preventDefault();
+        suggestionIndex = (suggestionIndex + 1) % candidates.length;
+        suggestionTitles = candidates.map(c => c.title);
+        suggestionUrls = candidates.map(c => c.url);
+        const chosen = candidates[suggestionIndex];
+        setCompletionSuffix(chosen.title.slice(q.length));
+        positionCompletion();
+      }
+    } else if (e.key === 'ArrowRight') {
+      const val = input.value;
+      const atEnd = input.selectionStart === val.length && input.selectionEnd === val.length;
+      const suffix = (completionEl?.textContent || input.getAttribute('data-completion') || '');
+      if (atEnd && suffix) {
+        e.preventDefault();
+        input.value = val + suffix;
+        setCompletionSuffix('');
+        positionCompletion();
+      }
+    }
   });
 
   function resetSearchUI() {
@@ -56,9 +94,12 @@ function getSettings() {
     scroller.querySelectorAll('.category').forEach(cat => cat.classList.remove('is-hidden', 'has-matches'));
     scroller.querySelectorAll('.category-links a').forEach(a => {
       const title = a.getAttribute('data-title') || a.textContent || '';
+      const url = a.getAttribute('data-url') || a.href || '';
       const iconEl = a.querySelector('img');
-      a.innerHTML = `${iconEl ? `<img class="link-icon" src="${iconEl.src}" alt="" /> ` : ''}${escapeHtml(title)}`;
+      const iconName = iconEl?.getAttribute('data-icon') || '';
+      a.innerHTML = `${iconEl ? `<img class="link-icon" src="${iconEl.src}" alt="" ${iconName ? `data-icon="${escapeHtml(iconName)}"` : ''} /> ` : ''}${escapeHtml(title)}`;
       a.setAttribute('data-title', title);
+      if (url) a.setAttribute('data-url', url);
       a.classList.remove('is-match');
     });
   }
@@ -76,7 +117,11 @@ function getSettings() {
       const icon = a.querySelector('img');
       const rest = m.title.slice(query.length);
       const highlighted = `<span class="match-highlight">${escapeHtml(m.title.slice(0, query.length))}</span>${escapeHtml(rest)}`;
-      a.innerHTML = `${icon ? `<img class="link-icon" src="${icon.src}" alt="" /> ` : ''}${highlighted}`;
+      const iconName = icon?.getAttribute('data-icon') || '';
+      const url = a.getAttribute('data-url') || a.href || '';
+      a.innerHTML = `${icon ? `<img class="link-icon" src="${icon.src}" alt="" ${iconName ? `data-icon=\"${escapeHtml(iconName)}\"` : ''} /> ` : ''}${highlighted}`;
+      if (url) a.setAttribute('data-url', url);
+      a.setAttribute('data-title', m.title);
       a.classList.add('is-match');
     }
     scroller.querySelectorAll('.category').forEach(cat => {
@@ -106,6 +151,51 @@ function getSettings() {
       });
     });
     return { matches: out, exactUrl };
+  }
+
+  function getAllBookmarks() {
+    const list = [];
+    const scroller = document.querySelector('.categories');
+    if (!scroller) return list;
+    scroller.querySelectorAll('.category').forEach(cat => {
+      cat.querySelectorAll('.category-links li a').forEach(a => {
+        const title = (a.getAttribute('data-title') || a.textContent || '').trim();
+        const url = a.href;
+        if (title && url) list.push({ title, url });
+      });
+    });
+    return list;
+  }
+
+  function setCompletionSuffix(suffix) {
+    input.setAttribute('data-completion', suffix || '');
+    if (completionEl) completionEl.textContent = suffix || '';
+  }
+
+  function updateInlineSuggestions(normalized) {
+    suggestionIndex = 0;
+    suggestionTitles = [];
+    suggestionUrls = [];
+    if (!normalized) { setCompletionSuffix(''); return; }
+    const q = normalized.toLowerCase();
+    const all = getAllBookmarks();
+    const candidates = all.filter(b => b.title.toLowerCase().startsWith(q));
+    if (candidates.length === 0) { setCompletionSuffix(''); return; }
+    suggestionTitles = candidates.map(c => c.title);
+    suggestionUrls = candidates.map(c => c.url);
+    const chosen = candidates[0];
+    setCompletionSuffix(chosen.title.slice(q.length));
+  }
+
+  function positionCompletion() {
+    if (!completionEl || !measureEl) return;
+    const style = getComputedStyle(input);
+    measureEl.style.fontFamily = style.fontFamily;
+    measureEl.style.fontSize = style.fontSize;
+    measureEl.textContent = input.value;
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const left = (measureEl.offsetWidth || 0) + paddingLeft;
+    completionEl.style.left = left + 'px';
   }
 
   function evaluateCalculator(input, last) {
@@ -243,6 +333,7 @@ updateClock();
 
   function openOverlay() {
     if (!overlay) return;
+    renderCategoriesFromSettings();
     overlay.classList.remove('hidden'); overlay.classList.add('show'); overlay.setAttribute('aria-hidden', 'false');
     populateForm();
   }
@@ -426,21 +517,26 @@ updateClock();
   (s.tempImperial ? $('#temp-f') : $('#temp-c')).checked = true;
   (s.windImperial ? $('#wind-mph') : $('#wind-kmh')).checked = true;
 
-  // Read bookmarks directly from displayed categories
-  const categories = [];
+  const fromDom = [];
   document.querySelectorAll('.categories .category').forEach(catEl => {
     const title = catEl.querySelector('.category-title')?.textContent.trim() || '';
     const icon = catEl.querySelector('.category-icon')?.getAttribute('data-icon') || '';
     const links = [];
     catEl.querySelectorAll('.category-links li a').forEach(a => {
+      const img = a.querySelector('img');
+      const iconName = img?.getAttribute('data-icon') || '';
+      const titleAttr = a.getAttribute('data-title') || (a.textContent || '').trim();
+      const urlAttr = a.getAttribute('data-url') || a.href;
       links.push({
-        title: a.textContent.trim(),
-        url: a.href,
-        icon: a.querySelector('img')?.src || ''
+        title: titleAttr,
+        url: urlAttr,
+        icon: iconName
       });
     });
-    categories.push({ title, icon, links });
+    fromDom.push({ title, icon, links });
   });
+
+  let categories = fromDom.length ? fromDom : getDefaultCategories();
 
   renderCategoriesEditor(categories);
 }
@@ -597,9 +693,12 @@ updateClock();
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = bm.url || '#';
+        a.setAttribute('data-title', bm.title || '');
+        if (bm.url) a.setAttribute('data-url', bm.url);
         const img = document.createElement('img');
         img.className = 'link-icon'; img.alt = '';
         applyIcon(img, bm.icon, 'frontend/media/none.png');
+        img.setAttribute('data-icon', bm.icon || '');
         a.appendChild(img);
         a.appendChild(document.createTextNode(' ' + (bm.title ? bm.title : 'Link')));
         li.appendChild(a);
@@ -650,6 +749,10 @@ updateClock();
   loadWeather();
   loadTodoist();
   renderCategoriesFromSettings();
+  document.querySelector('.categories')?.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (a) { e.preventDefault(); window.location.href = a.href; }
+  });
 })();
 
 /* Removed the old DOMContentLoaded autocomplete block to avoid conflicting behavior */
