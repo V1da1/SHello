@@ -1,756 +1,773 @@
-// --- Settings accessor
-function getSettings() {
-  try { return JSON.parse(localStorage.getItem('sp.settings') || '{}'); } catch { return {}; }
+* {
+  margin: 0;
+  padding: 0
 }
 
-// --- Command-line search + autocomplete + calculator
-(function initCommandSearch() {
-  const form = document.getElementById('search-form');
-  const input = document.getElementById('search-input');
-  const searchWrap = document.querySelector('.search-wrapper');
-  const completionEl = document.getElementById('search-completion');
-  const measureEl = document.getElementById('search-measure');
-  if (!form || !input) return;
-
-  let lastCalcResult = null;
-  let suggestionTitles = [];
-  let suggestionUrls = [];
-  let suggestionIndex = 0;
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const raw = input.value.trim();
-    if (!raw) return;
-
-    // Calculator
-    const calcAttempt = evaluateCalculator(raw, lastCalcResult);
-    if (calcAttempt.didEvaluate) {
-      lastCalcResult = calcAttempt.result;
-      input.value = String(calcAttempt.result);
-      resetSearchUI();
-      return;
-    }
-
-    const q = raw.toLowerCase();
-    const all = getAllBookmarks();
-    const candidates = all.filter(b => b.title.toLowerCase().startsWith(q));
-    if (candidates.length > 0) {
-      const chosen = candidates[suggestionIndex % candidates.length];
-      window.location.href = chosen.url;
-      return;
-    }
-    const { exactUrl } = computeBookmarkMatches(raw);
-    if (exactUrl) { window.location.href = exactUrl; return; }
-    window.location.href = `https://duckduckgo.com/?q=${encodeURIComponent(raw)}`;
-  });
-
-  input.addEventListener('input', () => {
-    const q = input.value;
-    if (lastCalcResult !== null) {
-      if (!/^\s*[+\-*/]/.test(q)) lastCalcResult = null;
-    }
-    const normalized = q.trim();
-    const { matches } = computeBookmarkMatches(normalized);
-    renderSearchUI(normalized, matches, { live: true });
-    if (searchWrap) searchWrap.classList.toggle('searching', normalized.length > 0);
-    updateInlineSuggestions(normalized);
-    positionCompletion();
-  });
-
-  input.addEventListener('focus', positionCompletion);
-  window.addEventListener('resize', positionCompletion);
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') {
-      const q = input.value.trim().toLowerCase();
-      if (!q) return;
-      const all = getAllBookmarks();
-      const candidates = all.filter(b => b.title.toLowerCase().startsWith(q));
-      if (candidates.length > 1) {
-        e.preventDefault();
-        suggestionIndex = (suggestionIndex + 1) % candidates.length;
-        suggestionTitles = candidates.map(c => c.title);
-        suggestionUrls = candidates.map(c => c.url);
-        const chosen = candidates[suggestionIndex];
-        setCompletionSuffix(chosen.title.slice(q.length));
-        positionCompletion();
-      }
-    } else if (e.key === 'ArrowRight') {
-      const val = input.value;
-      const atEnd = input.selectionStart === val.length && input.selectionEnd === val.length;
-      const suffix = (completionEl?.textContent || input.getAttribute('data-completion') || '');
-      if (atEnd && suffix) {
-        e.preventDefault();
-        input.value = val + suffix;
-        setCompletionSuffix('');
-        positionCompletion();
-      }
-    }
-  });
-
-  function resetSearchUI() {
-    const scroller = document.querySelector('.categories');
-    if (!scroller) return;
-    scroller.querySelectorAll('.category').forEach(cat => cat.classList.remove('is-hidden', 'has-matches'));
-    scroller.querySelectorAll('.category-links a').forEach(a => {
-      const title = a.getAttribute('data-title') || a.textContent || '';
-      const url = a.getAttribute('data-url') || a.href || '';
-      const iconEl = a.querySelector('img');
-      const iconName = iconEl?.getAttribute('data-icon') || '';
-      a.innerHTML = `${iconEl ? `<img class="link-icon" src="${iconEl.src}" alt="" ${iconName ? `data-icon="${escapeHtml(iconName)}"` : ''} /> ` : ''}${escapeHtml(title)}`;
-      a.setAttribute('data-title', title);
-      if (url) a.setAttribute('data-url', url);
-      a.classList.remove('is-match');
-    });
-  }
-
-  function renderSearchUI(query, matches) {
-    const scroller = document.querySelector('.categories');
-    if (!scroller) return;
-    resetSearchUI();
-    if (!query) return;
-
-    const catToMatchCount = new Map();
-    for (const m of matches) {
-      catToMatchCount.set(m.categoryEl, (catToMatchCount.get(m.categoryEl) || 0) + 1);
-      const a = m.aEl;
-      const icon = a.querySelector('img');
-      const rest = m.title.slice(query.length);
-      const highlighted = `<span class="match-highlight">${escapeHtml(m.title.slice(0, query.length))}</span>${escapeHtml(rest)}`;
-      const iconName = icon?.getAttribute('data-icon') || '';
-      const url = a.getAttribute('data-url') || a.href || '';
-      a.innerHTML = `${icon ? `<img class="link-icon" src="${icon.src}" alt="" ${iconName ? `data-icon=\"${escapeHtml(iconName)}\"` : ''} /> ` : ''}${highlighted}`;
-      if (url) a.setAttribute('data-url', url);
-      a.setAttribute('data-title', m.title);
-      a.classList.add('is-match');
-    }
-    scroller.querySelectorAll('.category').forEach(cat => {
-      const count = (catToMatchCount.get(cat) || 0);
-      if (count === 0) cat.classList.add('is-hidden');
-      else cat.classList.add('has-matches');
-    });
-  }
-
-  function computeBookmarkMatches(query) {
-    const out = [];
-    let exactUrl = null;
-    const scroller = document.querySelector('.categories');
-    if (!scroller) return { matches: out, exactUrl };
-    const q = (query || '').toLowerCase();
-    scroller.querySelectorAll('.category').forEach(cat => {
-      cat.querySelectorAll('.category-links li a').forEach(a => {
-        const title = (a.getAttribute('data-title') || a.textContent || '').trim();
-        a.setAttribute('data-title', title);
-        const lower = title.toLowerCase();
-        if (q && lower.startsWith(q)) {
-          out.push({ categoryEl: cat, aEl: a, title, url: a.href });
-        }
-        if (q && lower === q) {
-          exactUrl = a.href;
-        }
-      });
-    });
-    return { matches: out, exactUrl };
-  }
-
-  function getAllBookmarks() {
-    const list = [];
-    const scroller = document.querySelector('.categories');
-    if (!scroller) return list;
-    scroller.querySelectorAll('.category').forEach(cat => {
-      cat.querySelectorAll('.category-links li a').forEach(a => {
-        const title = (a.getAttribute('data-title') || a.textContent || '').trim();
-        const url = a.href;
-        if (title && url) list.push({ title, url });
-      });
-    });
-    return list;
-  }
-
-  function setCompletionSuffix(suffix) {
-    input.setAttribute('data-completion', suffix || '');
-    if (completionEl) completionEl.textContent = suffix || '';
-  }
-
-  function updateInlineSuggestions(normalized) {
-    suggestionIndex = 0;
-    suggestionTitles = [];
-    suggestionUrls = [];
-    if (!normalized) { setCompletionSuffix(''); return; }
-    const q = normalized.toLowerCase();
-    const all = getAllBookmarks();
-    const candidates = all.filter(b => b.title.toLowerCase().startsWith(q));
-    if (candidates.length === 0) { setCompletionSuffix(''); return; }
-    suggestionTitles = candidates.map(c => c.title);
-    suggestionUrls = candidates.map(c => c.url);
-    const chosen = candidates[0];
-    setCompletionSuffix(chosen.title.slice(q.length));
-  }
-
-  function positionCompletion() {
-    if (!completionEl || !measureEl) return;
-    const style = getComputedStyle(input);
-    measureEl.style.fontFamily = style.fontFamily;
-    measureEl.style.fontSize = style.fontSize;
-    measureEl.textContent = input.value;
-    const paddingLeft = parseFloat(style.paddingLeft) || 0;
-    const left = (measureEl.offsetWidth || 0) + paddingLeft;
-    completionEl.style.left = left + 'px';
-  }
-
-  function evaluateCalculator(input, last) {
-    if (last !== null && /^\s*[+\-*/]/.test(input)) input = String(last) + ' ' + input;
-    if (!/^\s*[+\-]?\s*(?:\d+(?:\.\d+)?)(?:\s*[+\-*/]\s*\d+(?:\.\d+)?\s*)*$/.test(input)) {
-      return { didEvaluate: false };
-    }
-    try {
-      const result = evaluateExpression(input);
-      if (!Number.isFinite(result)) return { didEvaluate: false };
-      return { didEvaluate: true, result };
-    } catch { return { didEvaluate: false }; }
-  }
-
-  function evaluateExpression(expr) {
-    const tokens = []; const re = /\d+(?:\.\d+)?|[+\-*/]/g; let m;
-    while ((m = re.exec(expr))) { tokens.push(m[0]); }
-    if (tokens.length === 0) throw new Error('no tokens');
-    const out = [], ops = [], prec = { '+': 1, '-': 1, '*': 2, '/': 2 }, isOp = t => ['+', '-', '*', '/'].includes(t);
-    for (const t of tokens) { if (isOp(t)) { while (ops.length && prec[ops[ops.length - 1]] >= prec[t]) out.push(ops.pop()); ops.push(t); } else out.push(parseFloat(t)); }
-    while (ops.length) out.push(ops.pop());
-    const st = [];
-    for (const t of out) {
-      if (typeof t === 'number') st.push(t);
-      else { const b = st.pop(), a = st.pop(); st.push(t === '+' ? a + b : t === '-' ? a - b : t === '*' ? a * b : a / b); }
-    }
-    if (st.length !== 1) throw new Error('bad expr');
-    return st[0];
-  }
-
-  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-})();
-
-// --- Clock
-function updateClock() {
-  const now = new Date();
-  const settings = getSettings();
-  const options = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: settings.clock12h === true };
-  document.getElementById("clock").textContent = now.toLocaleTimeString("en-US", options);
-}
-clearInterval(window.__clockInterval);
-window.__clockInterval = setInterval(updateClock, 1000);
-updateClock();
-
-// --- Discrete category navigation (wheel/keys/drag)
-(function enableDiscreteCategoryNav() {
-  const scroller = document.querySelector('.categories');
-  if (!scroller) return;
-
-  const getStep = () => {
-    const firstCard = scroller.querySelector('.category');
-    if (!firstCard) return 0;
-    const cardRect = firstCard.getBoundingClientRect();
-    const style = getComputedStyle(scroller);
-    const gapPx = parseFloat(style.columnGap || style.gap || '0') || 0;
-    return cardRect.width + gapPx;
-  };
-
-  const getMaxIndex = () => {
-    const total = scroller.querySelectorAll('.category').length;
-    const step = getStep();
-    const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-    const geometryMaxIndex = step > 0 ? Math.round(maxScroll / step) : 0;
-    const countBasedMaxIndex = Math.max(0, total - 4);
-    return Math.max(geometryMaxIndex, countBasedMaxIndex);
-  };
-
-  const getIndex = () => {
-    const step = getStep();
-    if (!step) return 0;
-    return Math.round(scroller.scrollLeft / step);
-  };
-
-  const goToIndex = (index) => {
-    const step = getStep();
-    if (!step) return;
-    const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-    const clampedIndex = Math.max(0, Math.min(getMaxIndex(), index));
-    const targetLeft = Math.min(clampedIndex * step, maxScroll);
-    scroller.scrollTo({ left: targetLeft, behavior: 'smooth' });
-  };
-
-  const scrollByOne = (direction) => {
-    const current = getIndex();
-    goToIndex(current + (direction > 0 ? 1 : -1));
-  };
-
-  let wheelLocked = false;
-  scroller.addEventListener('wheel', (e) => {
-    const magnitude = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? Math.abs(e.deltaY) : Math.abs(e.deltaX);
-    if (magnitude < 1) return;
-    e.preventDefault();
-    if (wheelLocked) return;
-    wheelLocked = true;
-    const direction = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) > 0 ? 1 : -1;
-    scrollByOne(direction);
-    setTimeout(() => { wheelLocked = false; }, 200);
-  }, { passive: false });
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight') { e.preventDefault(); scrollByOne(1); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); scrollByOne(-1); }
-  });
-
-  let isDragging = false, startX = 0, totalDx = 0;
-  const pointerDown = (e) => { isDragging = true; startX = e.clientX; totalDx = 0; scroller.setPointerCapture?.(e.pointerId); };
-  const pointerMove = (e) => { if (!isDragging) return; totalDx = e.clientX - startX; };
-  const pointerUp = (e) => {
-    if (!isDragging) return;
-    isDragging = false; scroller.releasePointerCapture?.(e.pointerId);
-    const threshold = Math.max(30, getStep() * 0.15);
-    if (Math.abs(totalDx) >= threshold) scrollByOne(totalDx < 0 ? 1 : -1);
-  };
-  scroller.addEventListener('pointerdown', pointerDown);
-  scroller.addEventListener('pointermove', pointerMove);
-  scroller.addEventListener('pointerup', pointerUp);
-  scroller.addEventListener('pointercancel', pointerUp);
-})();
-
-// --- Weather, Todoist, Settings
-(function initLastContainer() {
-  const weatherBody = document.getElementById('weather-body');
-  const weatherLoc = document.getElementById('weather-location');
-  const todoList = document.getElementById('todoist-list');
-  const todoProj = document.getElementById('todoist-project');
-  const settingsBtn = document.getElementById('open-settings');
-  const overlay = document.getElementById('settings-overlay');
-  const closeBtn = document.getElementById('close-settings');
-  const form = document.getElementById('settings-form');
-  const editor = document.getElementById('categories-editor');
-
-  if (settingsBtn) settingsBtn.addEventListener('click', openOverlay);
-  if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
-  if (overlay) overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(); });
-
-  function openOverlay() {
-    if (!overlay) return;
-    renderCategoriesFromSettings();
-    overlay.classList.remove('hidden'); overlay.classList.add('show'); overlay.setAttribute('aria-hidden', 'false');
-    populateForm();
-  }
-  function closeOverlay() {
-    if (!overlay) return;
-    overlay.classList.remove('show'); overlay.classList.add('closing');
-    const onEnd = () => { overlay.classList.remove('closing'); overlay.classList.add('hidden'); overlay.setAttribute('aria-hidden', 'true'); overlay.removeEventListener('animationend', onEnd); };
-    overlay.addEventListener('animationend', onEnd);
-  }
-
-  function saveSettings(next) { localStorage.setItem('sp.settings', JSON.stringify(next)); }
-  window.getSettings = getSettings;
-
-  async function loadWeather() {
-    if (!weatherBody) return;
-    const s = getSettings();
-    if (!s.weather || typeof s.weather.lat !== 'number' || typeof s.weather.lon !== 'number' || Number.isNaN(s.weather.lat) || Number.isNaN(s.weather.lon)) {
-      if (weatherLoc) weatherLoc.textContent = 'Configure in settings';
-      weatherBody.innerHTML = '';
-      return;
-    }
-    const { lat, lon } = s.weather;
-    const tempUnit = (s.tempImperial ? 'fahrenheit' : 'celsius');
-    const windUnit = (s.windImperial ? 'mph' : 'kmh');
-    try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current=temperature_2m,apparent_temperature,wind_speed_10m,weather_code,is_day&temperature_unit=${encodeURIComponent(tempUnit)}&windspeed_unit=${encodeURIComponent(windUnit)}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('weather fetch failed');
-      const data = await res.json();
-      const current = data.current || {};
-      const temp = Math.round(current.temperature_2m);
-      const feels = Math.round(current.apparent_temperature);
-      const wind = Math.round(current.wind_speed_10m);
-      const desc = weatherCodeToText(current.weather_code);
-      const isNight = Number(current.is_day) === 0;
-      if (weatherLoc) weatherLoc.textContent = '';
-      weatherBody.innerHTML = '';
-      const wrapper = document.createElement('div'); wrapper.className = 'weather-flex';
-      const main = document.createElement('div'); main.className = 'weather-main';
-      const iconBox = document.createElement('div'); iconBox.className = 'weather-icon';
-      const iconImg = document.createElement('img'); iconImg.alt = desc || 'weather';
-      applyIcon(iconImg, chooseWeatherIconName(current.weather_code, isNight), 'frontend/media/none.png');
-      iconBox.appendChild(iconImg);
-      const tempEl = document.createElement('div'); tempEl.className = 'weather-temp'; tempEl.textContent = `${temp}°${s.tempImperial ? 'F' : 'C'}`;
-      const descEl = document.createElement('div'); descEl.className = 'weather-desc'; descEl.textContent = desc;
-      main.appendChild(iconBox); main.appendChild(tempEl); main.appendChild(descEl);
-
-      const meta = document.createElement('div'); meta.className = 'weather-meta';
-      const feelsItem = document.createElement('div'); feelsItem.className = 'weather-chip';
-      const therm = document.createElement('img'); therm.alt = ''; therm.className = 'chip-icon'; applyIcon(therm, 'thermometer', 'frontend/media/none.png');
-      const feelsText = document.createElement('span'); feelsText.textContent = `Feels ${feels}°`;
-      feelsItem.appendChild(therm); feelsItem.appendChild(feelsText);
-      const windItem = document.createElement('div'); windItem.className = 'weather-chip';
-      const windI = document.createElement('img'); windI.alt = ''; windI.className = 'chip-icon'; applyIcon(windI, 'wind', 'frontend/media/none.png');
-      const windText = document.createElement('span'); windText.textContent = `${wind} ${s.windImperial ? 'mph' : 'km/h'}`;
-      windItem.appendChild(windI); windItem.appendChild(windText);
-      meta.appendChild(feelsItem); meta.appendChild(windItem);
-
-      wrapper.appendChild(main); wrapper.appendChild(meta); weatherBody.appendChild(wrapper);
-    } catch (e) { weatherBody.textContent = 'Weather unavailable'; }
-  }
-
-  function weatherCodeToText(code) {
-    const map = { 0: 'Clear', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast', 45: 'Fog', 48: 'Depositing rime fog', 51: 'Light drizzle', 53: 'Moderate drizzle', 55: 'Dense drizzle', 56: 'Freezing drizzle', 57: 'Dense freezing drizzle', 61: 'Slight rain', 63: 'Moderate rain', 65: 'Heavy rain', 66: 'Light freezing rain', 67: 'Heavy freezing rain', 71: 'Slight snow', 73: 'Moderate snow', 75: 'Heavy snow', 77: 'Snow grains', 80: 'Rain showers', 81: 'Heavy rain showers', 82: 'Violent rain showers', 85: 'Snow showers', 86: 'Heavy snow showers', 95: 'Thunderstorm', 96: 'Thunderstorm with hail', 99: 'Thunderstorm with heavy hail' };
-    return map[code] || '';
-  }
-  function chooseWeatherIconName(code, isNight) {
-    if (code === 0) return isNight ? 'moon' : 'sun';
-    if (code === 1) return isNight ? 'moon-star' : 'sun';
-    if (code === 2) return 'cloud-sun';
-    if (code === 3) return 'cloud';
-    if (code === 45 || code === 48) return 'fog';
-    if ((code >= 51 && code <= 57) || (code >= 61 && code <= 67) || code === 80 || code === 81 || code === 82) return 'cloud-rain';
-    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'cloud-snow';
-    if (code >= 95) return 'cloud-lightning';
-    return 'cloud';
-  }
-
-  async function loadTodoist() {
-    if (!todoList) return;
-    todoList.innerHTML = '';
-    const s = getSettings();
-    if (!s.todoist || !s.todoist.token) {
-      if (todoProj) todoProj.textContent = 'Configure in settings';
-      return;
-    }
-    const { token } = s.todoist;
-    try {
-      const headers = { 'Authorization': `Bearer ${token}` };
-      const res = await fetch('https://api.todoist.com/rest/v2/tasks', { headers });
-      if (!res.ok) throw new Error('todoist fetch failed');
-      const tasks = await res.json();
-
-      // Sort by due date ascending; undated last
-      const toTs = (t) => {
-        if (!t?.due?.date) return Infinity;
-        // Todoist date may be YYYY-MM-DD or ISO; Date can handle both
-        const d = new Date(t.due.date);
-        return d.getTime();
-      };
-      tasks.sort((a, b) => toTs(a) - toTs(b));
-
-      const remaining = tasks.length;
-      if (todoProj) todoProj.textContent = `${remaining} task${remaining === 1 ? '' : 's'}`;
-
-      const top = tasks.slice(0, 12);
-      for (const t of top) {
-        const li = document.createElement('li');
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.ariaLabel = 'Mark task complete';
-        checkbox.addEventListener('change', async () => {
-          checkbox.disabled = true;
-          const ok = await markTodoistTaskDone(token, t.id);
-          if (ok) {
-            li.remove();
-            const newCount = Math.max(0, (parseInt((todoProj?.textContent || '0').replace(/[^0-9]/g, '') || '0', 10) - 1));
-            if (todoProj) todoProj.textContent = `${newCount} task${newCount === 1 ? '' : 's'}`;
-          } else {
-            checkbox.checked = false;
-            checkbox.disabled = false;
-          }
-        });
-        const title = document.createElement('span');
-        title.textContent = t.content || '(Untitled)';
-        const due = document.createElement('span');
-        due.className = 'todo-due';
-        due.textContent = formatDueLabel(t.due?.date);
-        li.appendChild(checkbox);
-        li.appendChild(title);
-        li.appendChild(due);
-        todoList.appendChild(li);
-      }
-      if (top.length === 0) {
-        const li = document.createElement('li');
-        li.textContent = 'No tasks';
-        todoList.appendChild(li);
-      }
-    } catch (e) {
-      const li = document.createElement('li');
-      li.textContent = 'Tasks unavailable';
-      todoList.appendChild(li);
-    }
-  }
-
-  function formatDueLabel(dueIso) {
-    if (!dueIso) return 'No date';
-    try {
-      const due = new Date(dueIso);
-      const now = new Date();
-      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const startOfDue = new Date(due.getFullYear(), due.getMonth(), due.getDate());
-      const msPerDay = 24 * 60 * 60 * 1000;
-      const diffDays = Math.round((startOfDue - startOfToday) / msPerDay);
-      if (diffDays === 0) return 'Today';
-      if (diffDays === 1) return 'Tomorrow';
-      if (diffDays < 0) return 'Overdue';
-      return due.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    } catch { return 'No date'; }
-  }
-
-  async function markTodoistTaskDone(token, taskId) {
-    try {
-      const res = await fetch(`https://api.todoist.com/rest/v2/tasks/${encodeURIComponent(taskId)}/close`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-      });
-      return res.ok;
-    } catch { return false; }
-  }
-
-  // Settings form
-  function populateForm(){
-  const s = getSettings();
-  const $ = (id) => document.getElementById(id);
-
-  (s.clock12h ? $('#clock-12') : $('#clock-24')).checked = true;
-  $('#todoist-token').value = s.todoist?.token || '';
-  $('#weather-lat').value = s.weather?.lat ?? '';
-  $('#weather-lon').value = s.weather?.lon ?? '';
-  (s.tempImperial ? $('#temp-f') : $('#temp-c')).checked = true;
-  (s.windImperial ? $('#wind-mph') : $('#wind-kmh')).checked = true;
-
-  const fromDom = [];
-  document.querySelectorAll('.categories .category').forEach(catEl => {
-    const title = catEl.querySelector('.category-title')?.textContent.trim() || '';
-    const icon = catEl.querySelector('.category-icon')?.getAttribute('data-icon') || '';
-    const links = [];
-    catEl.querySelectorAll('.category-links li a').forEach(a => {
-      const img = a.querySelector('img');
-      const iconName = img?.getAttribute('data-icon') || '';
-      const titleAttr = a.getAttribute('data-title') || (a.textContent || '').trim();
-      const urlAttr = a.getAttribute('data-url') || a.href;
-      links.push({
-        title: titleAttr,
-        url: urlAttr,
-        icon: iconName
-      });
-    });
-    fromDom.push({ title, icon, links });
-  });
-
-  let categories = fromDom.length ? fromDom : getDefaultCategories();
-
-  renderCategoriesEditor(categories);
+html {
+  height: 100%;
+  overflow: hidden
 }
 
-  function renderCategoriesEditor(categories) {
-    if (!editor) return;
-    editor.innerHTML = '';
-    categories.forEach((cat, idx) => editor.appendChild(makeCategoryRow(cat, idx)));
+body {
+  height: 100vh;
+  background: linear-gradient(to bottom, #1f1e25 0%, #121e2c 15%, #19395c 67%, #265f9c);
+  background-attachment: fixed;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  padding-top: 40px;
+  overflow: hidden;
+  user-select: none
+}
+
+.container {
+  font-family: monospace;
+  color: #66aaff;
+  background-color: #0b111b;
+  margin-top: 40px;
+  padding: 20px;
+  border: 4px dotted #66aaff;
+  display: inline-block;
+  background-image: linear-gradient(180deg, #0b111b 0%, #0e1623 100%);
+  border-radius: 8px;
+  box-shadow: 0 0 12px rgba(102, 170, 255, .15), 0 12px 24px rgba(0, 0, 0, .5), 0 6px 6px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -6px 12px rgba(0, 0, 0, .25);
+  --sp-min-width: 520px;
+  min-width: var(--sp-min-width)
+}
+
+.search-wrapper {
+  position: relative;
+  display: flex;
+  flex: 1;
+}
+
+.search-wrapper::before {
+  content: ">";
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  padding-top: 5px;
+  transform: translateY(-50%);
+  color: #cfe6ff;
+  font-family: monospace;
+  pointer-events: none
+}
+
+/* removed trailing search icon */
+#search-input {
+  background: transparent;
+  color: #cfe6ff;
+  border: none;
+  padding-left: 18px;
+  padding-top: 5px;
+  font-family: monospace;
+  font-size: 12px;
+  width: 400px;
+  position: relative;
+}
+
+#search-input:focus {
+  outline: none
+}
+
+/* inline completion overlay */
+.search-completion {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(207, 230, 255, 0.6);
+  pointer-events: none;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre;
+  text-shadow: 0 0 6px rgba(102, 170, 255, .25);
+}
+
+.search-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+#clock {
+  padding-top: 5px;
+  white-space: nowrap;
+  margin-left: 12px
+}
+
+.container-wide {
+  font-family: monospace;
+  color: #66aaff;
+  background-color: #0b111b;
+  width: 90vw;
+  max-width: 1200px;
+  min-width: var(--sp-min-width, 0px);
+  height: 270px;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  padding: 16px 20px 22px 20px;
+  border: 4px dotted #66aaff;
+  background-image: linear-gradient(180deg, #0b111b 0%, #0e1623 100%);
+  border-radius: 8px;
+  box-shadow: 0 0 12px rgba(102, 170, 255, .15), 0 12px 24px rgba(0, 0, 0, .5), 0 6px 6px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -6px 12px rgba(0, 0, 0, .25);
+  overflow: hidden;
+  box-sizing: border-box
+}
+
+/* horizontal categories scroller */
+.categories {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 3 * 12px) / 4);
+  gap: 12px;
+  height: 100%;
+  scrollbar-gutter: stable both-edges;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth
+}
+
+.category {
+  scroll-snap-align: start;
+  border: 1px dotted #66aaff;
+  border-radius: 6px;
+  padding: 10px;
+  background: rgba(8, 14, 22, .6);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-bottom: 10px;
+  box-sizing: border-box
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px
+}
+
+.category-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: cover;
+  filter: brightness(0) invert(1) drop-shadow(0 0 2px rgba(102, 170, 255, .4))
+}
+
+.category-title {
+  font-weight: bold
+}
+
+.empty-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #99ccff;
+  opacity: .85;
+  width: 100%;
+  min-width: 100%;
+  text-align: center
+}
+
+.categories.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-x: hidden
+}
+
+.category-links {
+  list-style: none;
+  display: grid;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0
+}
+
+.category-links li a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #99ccff;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer
+}
+
+.match-highlight {
+  color: #0b111b;
+  background: #66aaff;
+  padding: 0 2px;
+  border-radius: 2px
+}
+
+.category-links a.is-match {
+  background: rgba(102, 170, 255, .12);
+  border-radius: 4px;
+  padding: 2px 4px
+}
+
+.category.is-hidden {
+  display: none
+}
+
+.link-icon {
+  width: 12px;
+  height: 12px;
+  object-fit: cover;
+  border-radius: 2px;
+  filter: brightness(0) invert(1)
+}
+
+/* themed scrollbar (webkit) */
+.categories::-webkit-scrollbar {
+  height: 10px
+}
+
+.categories::-webkit-scrollbar-track {
+  background: rgba(8, 14, 22, .6);
+  border-radius: 8px
+}
+
+.categories::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #3388ff, #66aaff);
+  border-radius: 8px;
+  border: 2px solid rgba(8, 14, 22, .6)
+}
+
+.categories::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #4a98ff, #88bbff)
+}
+
+/* firefox */
+.categories {
+  scrollbar-color: #66aaff rgba(8, 14, 22, .6);
+  scrollbar-width: thin
+}
+
+.container-last {
+  font-family: monospace;
+  color: #66aaff;
+  background-color: #0b111b;
+  width: 90vw;
+  max-width: 1200px;
+  min-width: var(--sp-min-width, 0px);
+  min-height: 250px;
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  border: 4px dotted #66aaff;
+  background-image: linear-gradient(180deg, #0b111b 0%, #0e1623 100%);
+  border-radius: 8px;
+  box-shadow: 0 0 12px rgba(102, 170, 255, .15), 0 12px 24px rgba(0, 0, 0, .5), 0 6px 6px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -6px 12px rgba(0, 0, 0, .25);
+  overflow: hidden;
+  box-sizing: border-box
+}
+
+.last-grid {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  height: 100%;
+  gap: 16px
+}
+
+.panel {
+  border: 1px dotted #66aaff;
+  border-radius: 6px;
+  padding: 12px;
+  background: rgba(8, 14, 22, .6);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06)
+}
+
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-weight: bold
+}
+
+.panel-sub {
+  color: #99ccff;
+  font-weight: normal;
+  opacity: .85
+}
+
+.panel-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center
+}
+
+.panel.weather .panel-body {
+  justify-content: center
+}
+
+.weather-flex {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 18px;
+  row-gap: 10px;
+  align-items: center;
+  justify-content: center;
+  width: auto
+}
+
+.weather-main {
+  display: grid;
+  grid-template-columns: 48px auto;
+  grid-template-rows: auto auto;
+  grid-template-areas: "icon temp" "icon desc";
+  column-gap: 10px;
+  row-gap: 4px;
+  align-items: center;
+  justify-items: start;
+  min-width: 140px
+}
+
+.weather-icon {
+  grid-area: icon
+}
+
+.weather-icon img {
+  width: 44px;
+  height: 44px;
+  filter: brightness(0) invert(1) drop-shadow(0 0 4px rgba(102, 170, 255, .35))
+}
+
+.weather-temp {
+  grid-area: temp;
+  font-size: 28px;
+  font-weight: bold
+}
+
+.weather-desc {
+  grid-area: desc;
+  font-size: 12px;
+  opacity: .9
+}
+
+.weather-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, auto));
+  gap: 8px 10px;
+  align-self: center
+}
+
+.weather-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px dotted #66aaff;
+  border-radius: 6px;
+  background: rgba(8, 14, 22, .45);
+  width: fit-content
+}
+
+.weather-chip .chip-icon {
+  width: 14px;
+  height: 14px;
+  filter: brightness(0) invert(1)
+}
+
+.hint {
+  color: #99ccff;
+  opacity: .85
+}
+
+.panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 6px
+}
+
+.panel-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #99ccff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.panel-list li input[type="checkbox"] {
+  accent-color: #66aaff
+}
+
+.todo-due {
+  margin-left: auto;
+  font-size: 11px;
+  opacity: .85
+}
+
+.cog-btn {
+  appearance: none;
+  border: 1px dotted transparent;
+  background: transparent;
+  color: #66aaff;
+  font-size: 28px;
+  line-height: 1;
+  padding: 10px 12px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 160ms ease, text-shadow 160ms ease, box-shadow 160ms ease;
+  text-shadow: 0 0 6px rgba(102, 170, 255, .25)
+}
+
+.cog-btn:hover {
+  transform: scale(1.1) rotate(40deg);
+  text-shadow: 0 0 10px #66aaff, 0 0 12px #3388ff
+}
+
+@media (max-width:900px) {
+  .last-grid {
+    grid-template-columns: 1fr
+  }
+}
+
+.global-cog {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  opacity: .6;
+  z-index: 1000
+}
+
+.global-cog:hover {
+  opacity: 1
+}
+
+.ascii {
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: pre;
+  text-shadow: 0 0 4px #66aaff, 0 0 8px #3388ff;
+  margin-left: 60px;
+  /* keep as requested */
+}
+
+.footer {
+  margin-top: 20px;
+  font-size: 12px;
+  color: #99ccff;
+  text-shadow: 0 0 4px #99ccff;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px dotted #66aaff;
+  padding-top: 5px;
+  justify-content: space-between;
+}
+
+/* Settings overlay */
+.overlay.hidden {
+  display: none
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 16, 26, .6);
+  backdrop-filter: blur(2px);
+  padding: 24px;
+  z-index: 2000
+}
+
+.overlay.show {
+  animation: fadeInOverlay 180ms ease-out
+}
+
+.overlay.show .modal {
+  animation: popIn 200ms ease-out
+}
+
+.overlay.closing {
+  animation: fadeOutOverlay 160ms ease-in forwards
+}
+
+.overlay.closing .modal {
+  animation: popOut 160ms ease-in forwards
+}
+
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0
   }
 
-  function buildLucideUrl(name) { return `https://cdn.jsdelivr.net/npm/lucide-static/icons/${encodeURIComponent(name)}.svg`; }
-  function buildSimpleIconUrl(name) { return `https://cdn.simpleicons.org/${encodeURIComponent(name)}`; }
-  function applyIcon(imgEl, name, defaultUrl) {
-    const trimmed = (name || '').trim();
-    if (!trimmed) { imgEl.src = defaultUrl; imgEl.onerror = null; return; }
-    imgEl.onerror = () => { imgEl.onerror = null; imgEl.src = buildSimpleIconUrl(trimmed.toLowerCase()); };
-    imgEl.src = buildLucideUrl(trimmed.toLowerCase());
+  to {
+    opacity: 1
+  }
+}
+
+@keyframes popIn {
+  from {
+    transform: scale(.98);
+    opacity: .98
   }
 
-  function makeCategoryRow(cat, idx) {
-    const row = document.createElement('div');
-    row.className = 'cat-row';
-    row.dataset.index = String(idx);
-    row.innerHTML = `
-      <div class="cat-head">
-        <label>Title <input type="text" class="cat-title" value="${escapeHtml(cat.title || '')}"></label>
-        <div class="icon-box">
-          <label>Icon <input type="text" class="cat-icon" placeholder="Icon Name" value="${escapeHtml(cat.icon || '')}"></label>
-          <img class="icon-preview" alt="icon" />
-        </div>
-        <div class="row-actions">
-          <button type="button" class="small add-bm">+ Bookmark</button>
-          <button type="button" class="small del-cat">Delete</button>
-        </div>
-      </div>
-      <div class="bookmarks"></div>
-    `;
-    const list = row.querySelector('.bookmarks');
-    (cat.links || []).forEach((bm) => list.appendChild(makeBmRow(bm)));
-    row.querySelector('.add-bm').addEventListener('click', () => {
-      if (list.children.length >= 4) return;
-      list.appendChild(makeBmRow({ title: '', url: '', icon: '' }));
-    });
-    row.querySelector('.del-cat').addEventListener('click', () => row.remove());
+  to {
+    transform: scale(1);
+    opacity: 1
+  }
+}
 
-    const iconInput = row.querySelector('.cat-icon');
-    const preview = row.querySelector('.icon-preview');
-    applyIcon(preview, cat.icon, 'frontend/media/news.png');
-    iconInput.addEventListener('input', () => { applyIcon(preview, iconInput.value.trim(), 'frontend/media/news.png'); });
-    return row;
+@keyframes fadeOutOverlay {
+  from {
+    opacity: 1
   }
 
-  function makeBmRow(bm) {
-    const r = document.createElement('div');
-    r.className = 'bm-row';
-    r.innerHTML = `
-      <input type="text" class="bm-title" placeholder="Title" value="${escapeHtml(bm.title || '')}">
-      <input type="text" class="bm-url" placeholder="https://" value="${escapeHtml(bm.url || '')}">
-      <input type="text" class="bm-icon" placeholder="Icon name (Lucide or Brand)" value="${escapeHtml(bm.icon || '')}" style="grid-column: span 2;">
-      <div class="row-actions" style="grid-column: span 2;">
-        <button type="button" class="small del-bm">Delete</button>
-      </div>
-      <img class="bm-preview" alt="icon" style="width:16px;height:16px;margin-left:4px;"/>
-    `;
-    const iconInput = r.querySelector('.bm-icon');
-    const preview = r.querySelector('.bm-preview');
-    applyIcon(preview, bm.icon, 'frontend/media/none.png');
-    iconInput.addEventListener('input', () => { applyIcon(preview, iconInput.value.trim(), 'frontend/media/none.png'); });
-    r.querySelector('.del-bm').addEventListener('click', () => r.remove());
-    return r;
+  to {
+    opacity: 0
+  }
+}
+
+@keyframes popOut {
+  from {
+    transform: scale(1);
+    opacity: 1
   }
 
-  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  to {
+    transform: scale(.98);
+    opacity: .98
+  }
+}
 
-  document.getElementById('add-category')?.addEventListener('click', () => {
-    editor.appendChild(makeCategoryRow({ title: '', icon: '', links: [] }, editor.children.length));
-  });
+.modal {
+  width: min(900px, 95vw);
+  max-height: 90vh;
+  overflow: auto;
+  color: #66aaff;
+  background-color: #0b111b;
+  border: 4px dotted #66aaff;
+  background-image: linear-gradient(180deg, #0b111b 0%, #0e1623 100%);
+  border-radius: 8px;
+  box-shadow: 0 0 12px rgba(102, 170, 255, .2), 0 20px 40px rgba(0, 0, 0, .6)
+}
 
-  if (form) form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const s = getSettings();
-    const next = {
-      ...s,
-      clock12h: document.querySelector('input[name="clock-format"]:checked')?.value === '12',
-      todoist: { token: document.getElementById('todoist-token').value.trim() },
-      weather: {
-        lat: parseFloat(document.getElementById('weather-lat').value),
-        lon: parseFloat(document.getElementById('weather-lon').value)
-      },
-      tempImperial: document.querySelector('input[name="temp-units"]:checked')?.value === 'f',
-      windImperial: document.querySelector('input[name="wind-units"]:checked')?.value === 'mph',
-      categories: collectCategoriesFromEditor()
-    };
+.modal::-webkit-scrollbar {
+  width: 10px
+}
 
-    saveSettings(next);
-    window.getSettings = () => next;
+.modal::-webkit-scrollbar-track {
+  background: rgba(8, 14, 22, .6);
+  border-radius: 8px
+}
 
-    closeOverlay();
-    updateClock();
-    loadTodoist();
-    loadWeather();
-    renderCategoriesFromSettings();
-  });
+.modal::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #3388ff, #66aaff);
+  border-radius: 8px;
+  border: 2px solid rgba(8, 14, 22, .6)
+}
 
-  function collectCategoriesFromEditor() {
-    const out = [];
-    editor.querySelectorAll('.cat-row').forEach((row) => {
-      const title = row.querySelector('.cat-title').value.trim();
-      const links = [];
-      row.querySelectorAll('.bm-row').forEach((r) => {
-        const bm = {
-          title: r.querySelector('.bm-title').value.trim(),
-          url: r.querySelector('.bm-url').value.trim(),
-          icon: r.querySelector('.bm-icon').value.trim()
-        };
-        if (bm.title || bm.url) links.push(bm);
-      });
-      const icon = row.querySelector('.cat-icon')?.value.trim();
-      if (title || links.length) out.push({ title, icon, links });
-    });
-    return out;
+.modal::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #4a98ff, #88bbff)
+}
+
+.modal {
+  scrollbar-color: #66aaff rgba(8, 14, 22, .6);
+  scrollbar-width: thin
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px dotted #66aaff
+}
+
+.close-btn {
+  appearance: none;
+  background: transparent;
+  border: 1px dotted #66aaff;
+  color: #cfe6ff;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer
+}
+
+.modal-body {
+  padding: 12px 16px 16px 16px
+}
+
+.modal fieldset {
+  border: 1px dotted #66aaff;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px
+}
+
+.modal legend {
+  padding: 0 6px
+}
+
+.modal label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+  color: #99ccff
+}
+
+.choice-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 8px 0
+}
+
+.choice-label {
+  opacity: .9
+}
+
+.modal input[type="text"],
+.modal input[type="password"],
+.modal input[type="number"] {
+  flex: 1;
+  background: #0e1623;
+  color: #cfe6ff;
+  border: 1px dotted #66aaff;
+  border-radius: 4px;
+  padding: 6px 8px
+}
+
+.modal input[type="text"]:focus,
+.modal input[type="password"]:focus,
+.modal input[type="number"]:focus {
+  outline: none;
+  border-color: #88bbff;
+  box-shadow: 0 0 0 3px rgba(102, 170, 255, .2)
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end
+}
+
+.primary {
+  appearance: none;
+  border: 1px dotted #66aaff;
+  background: linear-gradient(180deg, #0b111b, #0e1623);
+  color: #cfe6ff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(102, 170, 255, .25), inset 0 1px 0 rgba(255, 255, 255, .06)
+}
+
+.primary:hover {
+  background: linear-gradient(180deg, #0f1928, #122037)
+}
+
+/* Categories editor */
+.cats-editor {
+  display: grid;
+  gap: 12px
+}
+
+.cat-row {
+  border: 1px dotted #66aaff;
+  border-radius: 6px;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+  background: rgba(8, 14, 22, .5)
+}
+
+.cat-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: center
+}
+
+.cat-head .icon-box {
+  display: flex;
+  gap: 8px;
+  align-items: center
+}
+
+.cat-head .icon-preview {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  object-fit: cover;
+  filter: brightness(0) invert(1) drop-shadow(0 0 2px rgba(102, 170, 255, .4))
+}
+
+.bookmarks {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr))
+}
+
+.bm-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: center
+}
+
+.bm-preview {
+  filter: brightness(0) invert(1)
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px
+}
+
+.small {
+  appearance: none;
+  border: 1px dotted #66aaff;
+  background: #0e1623;
+  color: #cfe6ff;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: flex-end
+}
+
+/* Highlight animation */
+.category-links a.is-match {
+  color: #66ff99;
+  font-weight: bold;
+  position: relative;
+  animation: popGlow 250ms ease-out forwards
+}
+
+@keyframes popGlow {
+  from {
+    text-shadow: 0 0 0 rgba(102, 255, 153, 0);
+    transform: scale(1)
   }
 
-  // Render categories from settings; if none, seed defaults AND persist so settings show them next time
-  function renderCategoriesFromSettings() {
-    const s = getSettings();
-    let categories = Array.isArray(s.categories) ? s.categories : [];
-    const scroller = document.querySelector('.categories');
-    if (!scroller) return;
-    scroller.innerHTML = '';
-    scroller.classList.remove('empty-state');
-
-    if (categories.length === 0) {
-      categories = getDefaultCategories();
-      const seeded = { ...s, categories };
-      localStorage.setItem('sp.settings', JSON.stringify(seeded));
-    }
-
-    for (const cat of categories) {
-      const card = document.createElement('div');
-      card.className = 'category';
-      card.innerHTML = `
-        <div class="category-header">
-          <img class="category-icon" alt="icon" />
-          <span class="category-title">${escapeHtml(cat.title || 'Category')}</span>
-        </div>
-        <ul class="category-links"></ul>
-      `;
-      const headerImg = card.querySelector('.category-icon');
-      applyIcon(headerImg, cat.icon, 'frontend/media/news.png');
-      headerImg.setAttribute('data-icon', cat.icon);
-      const ul = card.querySelector('.category-links');
-      (cat.links || []).forEach((bm) => {
-        const li = document.createElement('li');
-        const a = document.createElement('a');
-        a.href = bm.url || '#';
-        a.setAttribute('data-title', bm.title || '');
-        if (bm.url) a.setAttribute('data-url', bm.url);
-        const img = document.createElement('img');
-        img.className = 'link-icon'; img.alt = '';
-        applyIcon(img, bm.icon, 'frontend/media/none.png');
-        img.setAttribute('data-icon', bm.icon || '');
-        a.appendChild(img);
-        a.appendChild(document.createTextNode(' ' + (bm.title ? bm.title : 'Link')));
-        li.appendChild(a);
-        ul.appendChild(li);
-      });
-      scroller.appendChild(card);
-    }
+  to {
+    text-shadow: 0 0 8px rgba(102, 255, 153, .8);
+    transform: scale(1.05)
   }
-
-  function getDefaultCategories() {
-    return [
-      {
-        title: 'Search', icon: 'search', links: [
-          { title: 'Google', url: 'https://www.google.com', icon: 'google' },
-          { title: 'YouTube', url: 'https://www.youtube.com', icon: 'youtube' },
-          { title: 'Wikipedia', url: 'https://www.wikipedia.org', icon: 'wikipedia' },
-          { title: 'Maps', url: 'https://maps.google.com', icon: 'map' }
-        ]
-      },
-      {
-        title: 'Social', icon: 'users', links: [
-          { title: 'Reddit', url: 'https://www.reddit.com', icon: 'reddit' },
-          { title: 'X', url: 'https://x.com', icon: 'x-twitter' },
-          { title: 'LinkedIn', url: 'https://www.linkedin.com', icon: 'linkedin' },
-          { title: 'Instagram', url: 'https://www.instagram.com', icon: 'instagram' }
-        ]
-      },
-      {
-        title: 'Dev', icon: 'code', links: [
-          { title: 'GitHub', url: 'https://github.com', icon: 'github' },
-          { title: 'Stack Overflow', url: 'https://stackoverflow.com', icon: 'stack-overflow' },
-          { title: 'MDN Docs', url: 'https://developer.mozilla.org', icon: 'mdnwebdocs' },
-          { title: 'NPM', url: 'https://www.npmjs.com', icon: 'npm' }
-        ]
-      },
-      {
-        title: 'Shopping', icon: 'shopping-bag', links: [
-          { title: 'Amazon', url: 'https://www.amazon.com', icon: 'amazon' },
-          { title: 'eBay', url: 'https://www.ebay.com', icon: 'ebay' },
-          { title: 'Newegg', url: 'https://www.newegg.com', icon: 'newegg' },
-          { title: 'AliExpress', url: 'https://www.aliexpress.com', icon: 'aliexpress' }
-        ]
-      }
-    ];
-  }
-
-  // Initial loads
-  loadWeather();
-  loadTodoist();
-  renderCategoriesFromSettings();
-  document.querySelector('.categories')?.addEventListener('click', (e) => {
-    const a = e.target.closest('a');
-    if (a) { e.preventDefault(); window.location.href = a.href; }
-  });
-})();
+}
